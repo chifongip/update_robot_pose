@@ -152,7 +152,7 @@ public:
                         map_base_link_data.pose.pose.orientation.y = map_base_link_g.getRotation().y();
                         map_base_link_data.pose.pose.orientation.z = map_base_link_g.getRotation().z();
                         map_base_link_data.pose.pose.orientation.w = map_base_link_g.getRotation().w();
-                        initialpose_pub.publish(map_base_link_data);
+                        // initialpose_pub.publish(map_base_link_data);
 
                         loop_rate.sleep();
                     }
