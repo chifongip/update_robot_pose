@@ -4,6 +4,7 @@
 #include "apriltag_ros/AprilTagDetection.h"
 #include "apriltag_ros/AprilTagDetectionArray.h"
 #include "geometry_msgs/PoseWithCovarianceStamped.h"
+#include "geometry_msgs/Pose.h"
 #include "nav_msgs/Odometry.h"
 
 #include <XmlRpcException.h>
@@ -18,7 +19,10 @@ using namespace std;
 
 class resetPose
 {
-public:
+public: 
+    static bool compare_dist_from_tag(const apriltag_ros::AprilTagDetection& a, const apriltag_ros::AprilTagDetection& b);
+    static void load_tag_poses(const XmlRpc::XmlRpcValue& tag_poses_input, std::map<int, geometry_msgs::Pose>& tag_poses_output);
+
     resetPose()
     {
         nh.getParam("update_robot_pose/tag_locations", tag_locations);
@@ -29,6 +33,8 @@ public:
         nh.getParam("update_robot_pose/yaw_tolerance", yaw_tolerance);
         nh.getParam("update_robot_pose/update_frequency", update_frequency);
         nh.getParam("update_robot_pose/debug", debug);
+
+        load_tag_poses(tag_locations, tag_poses);
 
         wait_duration = 1.0;
 
@@ -42,16 +48,11 @@ public:
 
         cout << "success initialization." << endl;
 
-        // for(int i = 0; i < tag_locations.size(); i++)
+        // for(const auto& elem: tag_poses)
         // {
-        //     for(const auto& elem: tag_locations[i])
-        //     {
-        //         cout << elem.first << ": " << elem.second << endl;
-        //     }
+        //     cout << elem.first << ": " << elem.second << endl;
         // }
     }
-
-    static bool compare_dist_from_tag(const apriltag_ros::AprilTagDetection& a, const apriltag_ros::AprilTagDetection& b);
 
     void odomCallback(const nav_msgs::Odometry::ConstPtr& msg)
     {
@@ -65,10 +66,6 @@ public:
         if(!msg->detections.empty() && curr_linear_vel_x <= max_linear_vel_x && curr_angular_vel_z <= max_angular_vel_z)
         {
             ros::Rate loop_rate(update_frequency);
-
-            // map_base_link_data.header.seq = msg->header.seq;
-            map_base_link_data.header.stamp = msg->header.stamp;
-            map_base_link_data.header.frame_id = "map";
 
             tag_detected.clear();
             for(int i = 0; i < msg->detections.size(); i++)
@@ -87,20 +84,25 @@ public:
                 usb_cam_link_tag_g.setOrigin(tf::Vector3(tag_detected[0].pose.pose.pose.position.x, tag_detected[0].pose.pose.pose.position.y, tag_detected[0].pose.pose.pose.position.z));
                 usb_cam_link_tag_g.setRotation(tf::Quaternion(tag_detected[0].pose.pose.pose.orientation.x, tag_detected[0].pose.pose.pose.orientation.y, tag_detected[0].pose.pose.pose.orientation.z, tag_detected[0].pose.pose.pose.orientation.w));
 
-                int id = 0;
-                for(auto d: tag_detected[0].id)
-                {
-                    id = id * 10 + d;
-                }
+                // int id = 0;
+                // for(auto d: tag_detected[0].id)
+                // {
+                //     id = id * 10 + d;
+                // }
 
-                for(int i = 0; i < tag_locations.size(); i++)
-                {
-                    if((int) tag_locations[i]["id"] == id)
-                    {
-                        map_tag_g.setOrigin(tf::Vector3(tag_locations[i]["x"], tag_locations[i]["y"], tag_locations[i]["z"]));
-                        map_tag_g.setRotation(tf::Quaternion(tag_locations[i]["qx"], tag_locations[i]["qy"], tag_locations[i]["qz"], tag_locations[i]["qw"]));
-                    }
-                }
+                // for(int i = 0; i < tag_locations.size(); i++)
+                // {
+                //     if((int) tag_locations[i]["id"] == id)
+                //     {
+                //         map_tag_g.setOrigin(tf::Vector3(tag_locations[i]["x"], tag_locations[i]["y"], tag_locations[i]["z"]));
+                //         map_tag_g.setRotation(tf::Quaternion(tag_locations[i]["qx"], tag_locations[i]["qy"], tag_locations[i]["qz"], tag_locations[i]["qw"]));
+                //     }
+                // }
+
+                int id = tag_detected[0].id[0];
+
+                map_tag_g.setOrigin(tf::Vector3(tag_poses[id].position.x, tag_poses[id].position.y, tag_poses[id].position.z));
+                map_tag_g.setRotation(tf::Quaternion(tag_poses[id].orientation.x, tag_poses[id].orientation.y, tag_poses[id].orientation.z, tag_poses[id].orientation.w));
 
                 // calculation of base_link w.r.t. map
                 tag_usb_cam_link_g = usb_cam_link_tag_g.inverse();                  // usb_cam_link w.r.t. tag
@@ -145,6 +147,10 @@ public:
                     // xy and yaw tolerance for updating the robot's pose
                     if(xy_diff > xy_tolerance || yaw_diff > yaw_tolerance)
                     {
+                        // map_base_link_data.header.seq = msg->header.seq;
+                        map_base_link_data.header.stamp = ros::Time::now();
+                        map_base_link_data.header.frame_id = "map";
+
                         map_base_link_data.pose.pose.position.x = map_base_link_g.getOrigin().x();
                         map_base_link_data.pose.pose.position.y = map_base_link_g.getOrigin().y();
                         map_base_link_data.pose.pose.position.z = map_base_link_g.getOrigin().z();
@@ -176,8 +182,9 @@ private:
     double curr_linear_vel_x, curr_angular_vel_z;
     double max_detection_dist, max_linear_vel_x, max_angular_vel_z, xy_tolerance, yaw_tolerance;
     XmlRpc::XmlRpcValue tag_locations;
+    std::map<int, geometry_msgs::Pose> tag_poses;
 
-    tf::Transformer tf_tool;
+    // tf::Transformer tf_tool;
     tf::TransformListener tf_listener;
     tf::StampedTransform base_link_usb_cam_link_g;
     tf::StampedTransform map_base_link_actual_g;
@@ -205,6 +212,25 @@ private:
 bool resetPose::compare_dist_from_tag(const apriltag_ros::AprilTagDetection& a, const apriltag_ros::AprilTagDetection& b)
 {
     return a.pose.pose.pose.position.z < b.pose.pose.pose.position.z;
+}
+
+void resetPose::load_tag_poses(const XmlRpc::XmlRpcValue& tag_poses_input, std::map<int, geometry_msgs::Pose>& tag_poses_output)
+{
+    for(int i = 0; i < tag_poses_input.size(); i++)
+    {
+        geometry_msgs::Pose tag_pose_buf;
+        tag_pose_buf.position.x = tag_poses_input[i]["x"];
+        tag_pose_buf.position.y = tag_poses_input[i]["y"];
+        tag_pose_buf.position.z = tag_poses_input[i]["z"];
+        tag_pose_buf.orientation.x = tag_poses_input[i]["qx"];
+        tag_pose_buf.orientation.y = tag_poses_input[i]["qy"];
+        tag_pose_buf.orientation.z = tag_poses_input[i]["qz"];
+        tag_pose_buf.orientation.w = tag_poses_input[i]["qw"];
+
+        int tag_id_buf = tag_poses_input[i]["id"];
+
+        tag_poses_output[tag_id_buf] = tag_pose_buf;
+    }
 }
 
 int main(int argc, char **argv)
