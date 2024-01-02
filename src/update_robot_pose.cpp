@@ -12,6 +12,7 @@
 #include <map>
 #include <vector>
 #include <cmath>
+#include <string>
 
 using namespace std;
 
@@ -26,14 +27,16 @@ public:
         nh.getParam("update_robot_pose/max_angular_vel_z", max_angular_vel_z);
         nh.getParam("update_robot_pose/xy_tolerance", xy_tolerance);
         nh.getParam("update_robot_pose/yaw_tolerance", yaw_tolerance);
+        nh.getParam("update_robot_pose/update_frequency", update_frequency);
+        nh.getParam("update_robot_pose/debug", debug);
 
         // get transformation matrix of usb_cam_link w.r.t base_link from tf_tree
         tf_listener.waitForTransform("base_link", "usb_cam_link", ros::Time(0), ros::Duration(1.0));
         tf_listener.lookupTransform("base_link", "usb_cam_link", ros::Time(0), base_link_usb_cam_link_g);
 
-        tag_detections_sub = nh.subscribe("tag_detections", 10, &resetPose::poseCallback, this);
-        odom_sub = nh.subscribe("odom", 10, &resetPose::odomCallback, this);
-        initialpose_pub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("initialpose", 10);
+        tag_detections_sub = nh.subscribe("tag_detections", 1, &resetPose::poseCallback, this);
+        odom_sub = nh.subscribe("odom", 1, &resetPose::odomCallback, this);
+        initialpose_pub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("initialpose", 1);
 
         cout << "success initialization." << endl;
 
@@ -117,17 +120,31 @@ public:
                 xy_diff = sqrt(pow((xy_actual[0] - xy_detect[0]), 2) +  pow((xy_actual[1] - xy_detect[1]), 2)); 
                 yaw_diff = abs(yaw_actual - yaw_detect);
 
-                // xy and yaw tolerance for updating the robot's pose
-                if(xy_diff > xy_tolerance || yaw_diff > yaw_tolerance)
+                if(debug == 1)
                 {
-                    map_base_link_data.pose.pose.position.x = map_base_link_g.getOrigin().x();
-                    map_base_link_data.pose.pose.position.y = map_base_link_g.getOrigin().y();
-                    map_base_link_data.pose.pose.position.z = map_base_link_g.getOrigin().z();
-                    map_base_link_data.pose.pose.orientation.x = map_base_link_g.getRotation().x();
-                    map_base_link_data.pose.pose.orientation.y = map_base_link_g.getRotation().y();
-                    map_base_link_data.pose.pose.orientation.z = map_base_link_g.getRotation().z();
-                    map_base_link_data.pose.pose.orientation.w = map_base_link_g.getRotation().w();
-                    initialpose_pub.publish(map_base_link_data);
+                    string tag_debug = "tag" + std::to_string(id);
+                    tf_listener.waitForTransform("map", tag_debug, ros::Time(0), ros::Duration(1.0));
+                    tf_listener.lookupTransform("map", tag_debug, ros::Time(0), map_tag_debug_g);
+                    ROS_INFO("{id: %d, x: %f, y: %f, z: %f, qx: %f, qy: %f, qz: %f, qw: %f}", id, map_tag_debug_g.getOrigin().x(), map_tag_debug_g.getOrigin().y(), map_tag_debug_g.getOrigin().z(),\
+                    map_tag_debug_g.getRotation().x(), map_tag_debug_g.getRotation().y(), map_tag_debug_g.getRotation().z(), map_tag_debug_g.getRotation().w());
+                }
+                else
+                {
+                    // xy and yaw tolerance for updating the robot's pose
+                    if(xy_diff > xy_tolerance || yaw_diff > yaw_tolerance)
+                    {
+                        map_base_link_data.pose.pose.position.x = map_base_link_g.getOrigin().x();
+                        map_base_link_data.pose.pose.position.y = map_base_link_g.getOrigin().y();
+                        map_base_link_data.pose.pose.position.z = map_base_link_g.getOrigin().z();
+                        map_base_link_data.pose.pose.orientation.x = map_base_link_g.getRotation().x();
+                        map_base_link_data.pose.pose.orientation.y = map_base_link_g.getRotation().y();
+                        map_base_link_data.pose.pose.orientation.z = map_base_link_g.getRotation().z();
+                        map_base_link_data.pose.pose.orientation.w = map_base_link_g.getRotation().w();
+                        initialpose_pub.publish(map_base_link_data);
+
+                        ros::Rate loop_rate(update_frequency);
+                        loop_rate.sleep();
+                    }
                 }
             }
         }
@@ -139,6 +156,8 @@ private:
     ros::Subscriber odom_sub;
     ros::Publisher initialpose_pub;
 
+    int debug;
+    double update_frequency;
     double curr_linear_vel_x, curr_angular_vel_z;
     double max_detection_dist, max_linear_vel_x, max_angular_vel_z, xy_tolerance, yaw_tolerance;
     XmlRpc::XmlRpcValue tag_locations;
@@ -161,6 +180,8 @@ private:
     tf::Transform usb_cam_link_base_link_g;
     tf::Transform map_base_link_g; 
 
+    tf::StampedTransform map_tag_debug_g;
+
 };
 
 bool resetPose::compare_dist_from_tag(const apriltag_ros::AprilTagDetection& a, const apriltag_ros::AprilTagDetection& b)
@@ -173,6 +194,7 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "posePublisher");
     resetPose resetPoseNode;
     ROS_INFO("reset pose node running.");
+    
     ros::spin();
 
     return 0;
