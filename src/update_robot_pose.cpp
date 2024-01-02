@@ -30,8 +30,10 @@ public:
         nh.getParam("update_robot_pose/update_frequency", update_frequency);
         nh.getParam("update_robot_pose/debug", debug);
 
+        wait_duration = 1.0;
+
         // get transformation matrix of usb_cam_link w.r.t base_link from tf_tree
-        tf_listener.waitForTransform("base_link", "usb_cam_link", ros::Time(0), ros::Duration(1.0));
+        tf_listener.waitForTransform("base_link", "usb_cam_link", ros::Time(0), ros::Duration(wait_duration));
         tf_listener.lookupTransform("base_link", "usb_cam_link", ros::Time(0), base_link_usb_cam_link_g);
 
         tag_detections_sub = nh.subscribe("tag_detections", 1, &resetPose::poseCallback, this);
@@ -53,8 +55,8 @@ public:
 
     void odomCallback(const nav_msgs::Odometry::ConstPtr& msg)
     {
-        curr_linear_vel_x = msg->twist.twist.linear.x;
-        curr_angular_vel_z = msg->twist.twist.angular.z;
+        curr_linear_vel_x = abs(msg->twist.twist.linear.x);
+        curr_angular_vel_z = abs(msg->twist.twist.angular.z);
     }
 
     void poseCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg)
@@ -62,12 +64,13 @@ public:
         // linear and angular velocity threshold for updating the robot's pose
         if(!msg->detections.empty() && curr_linear_vel_x <= max_linear_vel_x && curr_angular_vel_z <= max_angular_vel_z)
         {
-            geometry_msgs::PoseWithCovarianceStamped map_base_link_data;
-            map_base_link_data.header.seq = msg->header.seq;
+            ros::Rate loop_rate(update_frequency);
+
+            // map_base_link_data.header.seq = msg->header.seq;
             map_base_link_data.header.stamp = msg->header.stamp;
             map_base_link_data.header.frame_id = "map";
 
-            std::vector<apriltag_ros::AprilTagDetection> tag_detected;
+            tag_detected.clear();
             for(int i = 0; i < msg->detections.size(); i++)
             {
                 // distance between tag and base_link
@@ -76,13 +79,6 @@ public:
                     tag_detected.push_back(msg->detections[i]);
                 }
             }
-            
-            tf_listener.waitForTransform("map", "base_link", ros::Time(0), ros::Duration(1.0));
-            tf_listener.lookupTransform("map", "base_link", ros::Time(0), map_base_link_actual_g);
-            
-            xy_actual = {map_base_link_actual_g.getOrigin().x(), map_base_link_actual_g.getOrigin().y()};   // actual xy position
-            // map_base_link_actual_q = map_base_link_actual_g.getRotation();
-            tf::Matrix3x3(map_base_link_actual_g.getRotation()).getRPY(roll_actual, pitch_actual, yaw_actual);                              // actual yaw angle
             
             if(!tag_detected.empty())
             {
@@ -112,6 +108,19 @@ public:
                 
                 map_base_link_g = map_tag_g * tag_usb_cam_link_g * usb_cam_link_base_link_g;
 
+                // start_time = ros::WallTime::now();
+
+                tf_listener.waitForTransform("map", "base_link", ros::Time(0), ros::Duration(wait_duration));
+                tf_listener.lookupTransform("map", "base_link", ros::Time(0), map_base_link_actual_g);
+
+                // end_time = ros::WallTime::now();
+                // execution_time = (end_time - start_time).toNSec() * 1e-6;
+                // ROS_INFO_STREAM("Execution time: " << execution_time << " milliseconds");
+                
+                xy_actual = {map_base_link_actual_g.getOrigin().x(), map_base_link_actual_g.getOrigin().y()};       // actual xy position
+                // map_base_link_actual_q = map_base_link_actual_g.getRotation();
+                tf::Matrix3x3(map_base_link_actual_g.getRotation()).getRPY(roll_actual, pitch_actual, yaw_actual);  // actual yaw angle
+                
                 // get rotation and translation matrix from transformation matrix 
                 xy_detect = {map_base_link_g.getOrigin().x(), map_base_link_g.getOrigin().y()};
                 // map_base_link_q = map_base_link_g.getRotation();
@@ -120,10 +129,13 @@ public:
                 xy_diff = sqrt(pow((xy_actual[0] - xy_detect[0]), 2) +  pow((xy_actual[1] - xy_detect[1]), 2)); 
                 yaw_diff = abs(yaw_actual - yaw_detect);
 
+                cout << "xy_diff: " << xy_diff << "------" << "yaw_diff: " << yaw_diff << endl;
+                cout << "------------------------------------------------------------" << endl;
+
                 if(debug == 1)
                 {
                     string tag_debug = "tag" + std::to_string(id);
-                    tf_listener.waitForTransform("map", tag_debug, ros::Time(0), ros::Duration(1.0));
+                    tf_listener.waitForTransform("map", tag_debug, ros::Time(0), ros::Duration(wait_duration));
                     tf_listener.lookupTransform("map", tag_debug, ros::Time(0), map_tag_debug_g);
                     ROS_INFO("{id: %d, x: %f, y: %f, z: %f, qx: %f, qy: %f, qz: %f, qw: %f}", id, map_tag_debug_g.getOrigin().x(), map_tag_debug_g.getOrigin().y(), map_tag_debug_g.getOrigin().z(),\
                     map_tag_debug_g.getRotation().x(), map_tag_debug_g.getRotation().y(), map_tag_debug_g.getRotation().z(), map_tag_debug_g.getRotation().w());
@@ -142,7 +154,6 @@ public:
                         map_base_link_data.pose.pose.orientation.w = map_base_link_g.getRotation().w();
                         initialpose_pub.publish(map_base_link_data);
 
-                        ros::Rate loop_rate(update_frequency);
                         loop_rate.sleep();
                     }
                 }
@@ -156,6 +167,10 @@ private:
     ros::Subscriber odom_sub;
     ros::Publisher initialpose_pub;
 
+    double wait_duration; 
+    // ros::WallTime start_time, end_time;
+    // double execution_time;
+
     int debug;
     double update_frequency;
     double curr_linear_vel_x, curr_angular_vel_z;
@@ -168,6 +183,9 @@ private:
     tf::StampedTransform map_base_link_actual_g;
     // tf::Quaternion map_base_link_actual_q;
     // tf::Quaternion map_base_link_q;
+
+    geometry_msgs::PoseWithCovarianceStamped map_base_link_data;
+    std::vector<apriltag_ros::AprilTagDetection> tag_detected;
 
     std::vector<double> xy_actual, xy_detect; 
     double roll_actual, pitch_actual, yaw_actual, roll_detect, pitch_detect, yaw_detect;
