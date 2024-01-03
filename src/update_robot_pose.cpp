@@ -22,9 +22,6 @@ using namespace std;
 class resetPose
 {
 public: 
-    static bool compare_dist_from_tag(const apriltag_ros::AprilTagDetection& a, const apriltag_ros::AprilTagDetection& b);
-    static void load_tag_poses(const XmlRpc::XmlRpcValue& tag_poses_input, std::map<int, geometry_msgs::Pose>& tag_poses_output);
-
     resetPose(): tf2_buffer(), tf2_listener(tf2_buffer)//, loop_rate(1)
     {
         nh.getParam("update_robot_pose/tag_locations", tag_locations);
@@ -34,6 +31,7 @@ public:
         nh.getParam("update_robot_pose/xy_tolerance", xy_tolerance);
         nh.getParam("update_robot_pose/yaw_tolerance", yaw_tolerance);
         // nh.getParam("update_robot_pose/update_frequency", update_frequency);
+        nh.getParam("update_robot_pose/skip_data_num", skip_data_num);
         nh.getParam("update_robot_pose/debug", debug);
 
         // construct a dictionary to store tag locations
@@ -70,6 +68,67 @@ public:
         // }
     }
 
+private:
+    ros::NodeHandle nh;
+    ros::Subscriber tag_detections_sub;
+    ros::Subscriber odom_sub;
+    ros::Subscriber amcl_pose_sub;
+    ros::Publisher initialpose_pub;
+
+    // ros::Rate loop_rate;
+
+    int tag_flag;
+    int tag_seq;
+    int init_pose;
+
+    // ros::WallTime start_time, end_time;
+    // double execution_time;
+
+    int skip_data_num;
+    int debug;
+    // double update_frequency;
+    double curr_linear_vel_x, curr_angular_vel_z;
+    double max_detection_dist, max_linear_vel_x, max_angular_vel_z, xy_tolerance, yaw_tolerance;
+    XmlRpc::XmlRpcValue tag_locations;
+    std::map<int, geometry_msgs::Pose> tag_poses;
+
+    tf2_ros::Buffer tf2_buffer;
+    tf2_ros::TransformListener tf2_listener;
+    // geometry_msgs::TransformStamped tf2_map_base_link_actual_g;
+    geometry_msgs::TransformStamped tf2_base_link_usb_cam_link_g;
+    geometry_msgs::TransformStamped tf2_map_tag_debug_g;
+    tf::Transform base_link_usb_cam_link_g;
+
+    geometry_msgs::Pose map_base_link_actual_pose;
+
+    // tf::Transformer tf_tool;
+    // tf::TransformListener tf_listener;
+    // tf::StampedTransform base_link_usb_cam_link_g;
+    // tf::StampedTransform map_base_link_actual_g;
+    // tf::Quaternion map_base_link_actual_q;
+    // tf::Quaternion map_base_link_q;
+
+    geometry_msgs::PoseWithCovarianceStamped map_base_link_data;
+    std::vector<apriltag_ros::AprilTagDetection> tag_detected;
+
+    int id;
+
+    std::vector<double> xy_actual, xy_detect; 
+    double roll_actual, pitch_actual, yaw_actual, roll_detect, pitch_detect, yaw_detect;
+    double xy_diff, yaw_diff;
+
+    tf::Transform usb_cam_link_tag_g;
+    tf::Transform map_tag_g;
+
+    tf::Transform tag_usb_cam_link_g;
+    tf::Transform usb_cam_link_base_link_g;
+    tf::Transform map_base_link_g; 
+
+    // tf::StampedTransform map_tag_debug_g;
+
+    static bool compare_dist_from_tag(const apriltag_ros::AprilTagDetection& a, const apriltag_ros::AprilTagDetection& b);
+    void load_tag_poses(const XmlRpc::XmlRpcValue& tag_poses_input, std::map<int, geometry_msgs::Pose>& tag_poses_output);
+    
     void odomCallback(const nav_msgs::Odometry::ConstPtr& msg)
     {
         // get recent linear and angular velocity from odom 
@@ -122,7 +181,7 @@ public:
             }
             
             // when the tag is detected first time, skip specific number of data (e.g. 8), then reset robot's pose
-            if(!tag_detected.empty() && tag_flag == 1 && msg->header.seq == (tag_seq + 8))
+            if(!tag_detected.empty() && tag_flag == 1 && msg->header.seq == (tag_seq + skip_data_num))
             {
                 // get the closest tag if several tags were detected 
                 std::sort(tag_detected.begin(), tag_detected.end(), compare_dist_from_tag);
@@ -239,64 +298,6 @@ public:
             tag_seq = msg->header.seq;
         }
     }
-
-private:
-    ros::NodeHandle nh;
-    ros::Subscriber tag_detections_sub;
-    ros::Subscriber odom_sub;
-    ros::Subscriber amcl_pose_sub;
-    ros::Publisher initialpose_pub;
-
-    // ros::Rate loop_rate;
-
-    int tag_flag;
-    int tag_seq;
-    int init_pose;
-
-    // ros::WallTime start_time, end_time;
-    // double execution_time;
-
-    int debug;
-    // double update_frequency;
-    double curr_linear_vel_x, curr_angular_vel_z;
-    double max_detection_dist, max_linear_vel_x, max_angular_vel_z, xy_tolerance, yaw_tolerance;
-    XmlRpc::XmlRpcValue tag_locations;
-    std::map<int, geometry_msgs::Pose> tag_poses;
-
-    tf2_ros::Buffer tf2_buffer;
-    tf2_ros::TransformListener tf2_listener;
-    // geometry_msgs::TransformStamped tf2_map_base_link_actual_g;
-    geometry_msgs::TransformStamped tf2_base_link_usb_cam_link_g;
-    geometry_msgs::TransformStamped tf2_map_tag_debug_g;
-    tf::Transform base_link_usb_cam_link_g;
-
-    geometry_msgs::Pose map_base_link_actual_pose;
-
-    // tf::Transformer tf_tool;
-    // tf::TransformListener tf_listener;
-    // tf::StampedTransform base_link_usb_cam_link_g;
-    // tf::StampedTransform map_base_link_actual_g;
-    // tf::Quaternion map_base_link_actual_q;
-    // tf::Quaternion map_base_link_q;
-
-    geometry_msgs::PoseWithCovarianceStamped map_base_link_data;
-    std::vector<apriltag_ros::AprilTagDetection> tag_detected;
-
-    int id;
-
-    std::vector<double> xy_actual, xy_detect; 
-    double roll_actual, pitch_actual, yaw_actual, roll_detect, pitch_detect, yaw_detect;
-    double xy_diff, yaw_diff;
-
-    tf::Transform usb_cam_link_tag_g;
-    tf::Transform map_tag_g;
-
-    tf::Transform tag_usb_cam_link_g;
-    tf::Transform usb_cam_link_base_link_g;
-    tf::Transform map_base_link_g; 
-
-    // tf::StampedTransform map_tag_debug_g;
-
 };
 
 bool resetPose::compare_dist_from_tag(const apriltag_ros::AprilTagDetection& a, const apriltag_ros::AprilTagDetection& b)
