@@ -36,7 +36,7 @@ public:
         // nh.getParam("update_robot_pose/update_frequency", update_frequency);
         nh.getParam("update_robot_pose/debug", debug);
 
-        // construct a dictionary and store tag locations
+        // construct a dictionary to store tag locations
         load_tag_poses(tag_locations, tag_poses);
 
         tag_flag = 1;
@@ -121,7 +121,7 @@ public:
                 }
             }
             
-            // when the tag is detected first time, skip specific frames (e.g. 8), start reset robot's pose
+            // when the tag is detected first time, skip specific number of data (e.g. 8), then reset robot's pose
             if(!tag_detected.empty() && tag_flag == 1 && msg->header.seq == (tag_seq + 8))
             {
                 // get the closest tag if several tags were detected 
