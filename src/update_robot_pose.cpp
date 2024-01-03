@@ -1,8 +1,10 @@
 #include "ros/ros.h"
 #include "tf/tf.h"
 #include "tf/transform_listener.h"
+#include "tf2_ros/transform_listener.h"
 #include "apriltag_ros/AprilTagDetection.h"
 #include "apriltag_ros/AprilTagDetectionArray.h"
+#include "geometry_msgs/TransformStamped.h"
 #include "geometry_msgs/PoseWithCovarianceStamped.h"
 #include "geometry_msgs/Pose.h"
 #include "nav_msgs/Odometry.h"
@@ -23,7 +25,7 @@ public:
     static bool compare_dist_from_tag(const apriltag_ros::AprilTagDetection& a, const apriltag_ros::AprilTagDetection& b);
     static void load_tag_poses(const XmlRpc::XmlRpcValue& tag_poses_input, std::map<int, geometry_msgs::Pose>& tag_poses_output);
 
-    resetPose()
+    resetPose(): tf2_buffer(), tf2_listener(tf2_buffer)
     {
         nh.getParam("update_robot_pose/tag_locations", tag_locations);
         nh.getParam("update_robot_pose/max_detection_dist", max_detection_dist);
@@ -36,11 +38,19 @@ public:
 
         load_tag_poses(tag_locations, tag_poses);
 
-        wait_duration = 1.0;
+        // wait_duration = 1.0;
+
+        ros::Duration(1.0).sleep();
 
         // get transformation matrix of usb_cam_link w.r.t base_link from tf_tree
-        tf_listener.waitForTransform("base_link", "usb_cam_link", ros::Time(0), ros::Duration(wait_duration));
-        tf_listener.lookupTransform("base_link", "usb_cam_link", ros::Time(0), base_link_usb_cam_link_g);
+        // tf_listener.waitForTransform("base_link", "usb_cam_link", ros::Time(0), ros::Duration(wait_duration));
+        // tf_listener.lookupTransform("base_link", "usb_cam_link", ros::Time(0), base_link_usb_cam_link_g);
+
+        tf2_base_link_usb_cam_link_g = tf2_buffer.lookupTransform("base_link", "usb_cam_link", ros::Time(0));
+        base_link_usb_cam_link_g.setOrigin(tf::Vector3(tf2_base_link_usb_cam_link_g.transform.translation.x, tf2_base_link_usb_cam_link_g.transform.translation.y,\
+         tf2_base_link_usb_cam_link_g.transform.translation.z));
+        base_link_usb_cam_link_g.setRotation(tf::Quaternion(tf2_base_link_usb_cam_link_g.transform.rotation.x, tf2_base_link_usb_cam_link_g.transform.rotation.y, \
+         tf2_base_link_usb_cam_link_g.transform.rotation.z, tf2_base_link_usb_cam_link_g.transform.rotation.w));
 
         tag_detections_sub = nh.subscribe("tag_detections", 1, &resetPose::poseCallback, this);
         odom_sub = nh.subscribe("odom", 1, &resetPose::odomCallback, this);
@@ -62,10 +72,20 @@ public:
 
     void poseCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg)
     {
+        // start_time = ros::WallTime::now();
         // linear and angular velocity threshold for updating the robot's pose
+
+        tf2_map_base_link_actual_g = tf2_buffer.lookupTransform("map", "base_link", ros::Time(0));
+
+        // cout << "****************************************************************************" << endl;
+        // cout << "lookuptransform stamp: " << endl << tf2_map_base_link_actual_g.header.stamp << endl;
+        // cout << "----------------------------------------------------------------------------" << endl;
+        // cout << "tag detection stamp: " << endl << msg->header.stamp << endl;
+        // cout << "****************************************************************************" << endl;
+
         if(!msg->detections.empty() && curr_linear_vel_x <= max_linear_vel_x && curr_angular_vel_z <= max_angular_vel_z)
         {
-            ros::Rate loop_rate(update_frequency);
+            // ros::Rate loop_rate(update_frequency);
 
             tag_detected.clear();
             for(int i = 0; i < msg->detections.size(); i++)
@@ -82,7 +102,8 @@ public:
                 std::sort(tag_detected.begin(), tag_detected.end(), compare_dist_from_tag);
 
                 usb_cam_link_tag_g.setOrigin(tf::Vector3(tag_detected[0].pose.pose.pose.position.x, tag_detected[0].pose.pose.pose.position.y, tag_detected[0].pose.pose.pose.position.z));
-                usb_cam_link_tag_g.setRotation(tf::Quaternion(tag_detected[0].pose.pose.pose.orientation.x, tag_detected[0].pose.pose.pose.orientation.y, tag_detected[0].pose.pose.pose.orientation.z, tag_detected[0].pose.pose.pose.orientation.w));
+                usb_cam_link_tag_g.setRotation(tf::Quaternion(tag_detected[0].pose.pose.pose.orientation.x, tag_detected[0].pose.pose.pose.orientation.y,\
+                 tag_detected[0].pose.pose.pose.orientation.z, tag_detected[0].pose.pose.pose.orientation.w));
 
                 // int id = 0;
                 // for(auto d: tag_detected[0].id)
@@ -109,19 +130,17 @@ public:
                 usb_cam_link_base_link_g = base_link_usb_cam_link_g.inverse();      // base_link w.r.t. usb_cam_link
                 
                 map_base_link_g = map_tag_g * tag_usb_cam_link_g * usb_cam_link_base_link_g;
-
-                // start_time = ros::WallTime::now();
-
-                tf_listener.waitForTransform("map", "base_link", ros::Time(0), ros::Duration(wait_duration));
-                tf_listener.lookupTransform("map", "base_link", ros::Time(0), map_base_link_actual_g);
-
-                // end_time = ros::WallTime::now();
-                // execution_time = (end_time - start_time).toNSec() * 1e-6;
-                // ROS_INFO_STREAM("Execution time: " << execution_time << " milliseconds");
                 
-                xy_actual = {map_base_link_actual_g.getOrigin().x(), map_base_link_actual_g.getOrigin().y()};       // actual xy position
-                // map_base_link_actual_q = map_base_link_actual_g.getRotation();
-                tf::Matrix3x3(map_base_link_actual_g.getRotation()).getRPY(roll_actual, pitch_actual, yaw_actual);  // actual yaw angle
+                // tf_listener.waitForTransform("map", "base_link", ros::Time(0), ros::Duration(wait_duration));
+                // tf_listener.lookupTransform("map", "base_link", ros::Time(0), map_base_link_actual_g);
+                
+                xy_actual = {tf2_map_base_link_actual_g.transform.translation.x, tf2_map_base_link_actual_g.transform.translation.y};
+                tf::Matrix3x3(tf::Quaternion(tf2_map_base_link_actual_g.transform.rotation.x, tf2_map_base_link_actual_g.transform.rotation.y, tf2_map_base_link_actual_g.transform.rotation.z,\
+                 tf2_map_base_link_actual_g.transform.rotation.w)).getRPY(roll_actual, pitch_actual, yaw_actual);
+                
+                // xy_actual = {map_base_link_actual_g.getOrigin().x(), map_base_link_actual_g.getOrigin().y()};       // actual xy position
+                // // map_base_link_actual_q = map_base_link_actual_g.getRotation();
+                // tf::Matrix3x3(map_base_link_actual_g.getRotation()).getRPY(roll_actual, pitch_actual, yaw_actual);  // actual yaw angle
                 
                 // get rotation and translation matrix from transformation matrix 
                 xy_detect = {map_base_link_g.getOrigin().x(), map_base_link_g.getOrigin().y()};
@@ -131,16 +150,23 @@ public:
                 xy_diff = sqrt(pow((xy_actual[0] - xy_detect[0]), 2) +  pow((xy_actual[1] - xy_detect[1]), 2)); 
                 yaw_diff = abs(yaw_actual - yaw_detect);
 
-                cout << "xy_diff: " << xy_diff << "------" << "yaw_diff: " << yaw_diff << endl;
-                cout << "------------------------------------------------------------" << endl;
+                // cout << "xy_diff: " << xy_diff << "------" << "yaw_diff: " << yaw_diff << endl;
+                // cout << "------------------------------------------------------------" << endl;
 
                 if(debug == 1)
                 {
                     string tag_debug = "tag" + std::to_string(id);
-                    tf_listener.waitForTransform("map", tag_debug, ros::Time(0), ros::Duration(wait_duration));
-                    tf_listener.lookupTransform("map", tag_debug, ros::Time(0), map_tag_debug_g);
-                    ROS_INFO("{id: %d, x: %f, y: %f, z: %f, qx: %f, qy: %f, qz: %f, qw: %f}", id, map_tag_debug_g.getOrigin().x(), map_tag_debug_g.getOrigin().y(), map_tag_debug_g.getOrigin().z(),\
-                    map_tag_debug_g.getRotation().x(), map_tag_debug_g.getRotation().y(), map_tag_debug_g.getRotation().z(), map_tag_debug_g.getRotation().w());
+                    // tf_listener.waitForTransform("map", tag_debug, ros::Time(0), ros::Duration(wait_duration));
+                    // tf_listener.lookupTransform("map", tag_debug, ros::Time(0), map_tag_debug_g);
+                    tf2_map_tag_debug_g = tf2_buffer.lookupTransform("map", tag_debug, ros::Time(0));
+
+                    // ROS_INFO("{id: %d, x: %f, y: %f, z: %f, qx: %f, qy: %f, qz: %f, qw: %f}", id, map_tag_debug_g.getOrigin().x(), map_tag_debug_g.getOrigin().y(),\
+                    //  map_tag_debug_g.getOrigin().z(), map_tag_debug_g.getRotation().x(), map_tag_debug_g.getRotation().y(), map_tag_debug_g.getRotation().z(),\
+                    //  map_tag_debug_g.getRotation().w());
+
+                    ROS_INFO("{id: %d, x: %f, y: %f, z: %f, qx: %f, qy: %f, qz: %f, qw: %f}", id, tf2_map_tag_debug_g.transform.translation.x, tf2_map_tag_debug_g.transform.translation.y,\
+                     tf2_map_tag_debug_g.transform.translation.z, tf2_map_tag_debug_g.transform.rotation.x, tf2_map_tag_debug_g.transform.rotation.y,\
+                     tf2_map_tag_debug_g.transform.rotation.z, tf2_map_tag_debug_g.transform.rotation.w);
                 }
                 else
                 {
@@ -160,7 +186,11 @@ public:
                         map_base_link_data.pose.pose.orientation.w = map_base_link_g.getRotation().w();
                         initialpose_pub.publish(map_base_link_data);
 
-                        loop_rate.sleep();
+                        // end_time = ros::WallTime::now();
+                        // execution_time = (end_time - start_time).toNSec() * 1e-6;
+                        // ROS_INFO_STREAM("Execution time: " << execution_time << " milliseconds");
+
+                        // loop_rate.sleep();
                     }
                 }
             }
@@ -173,7 +203,7 @@ private:
     ros::Subscriber odom_sub;
     ros::Publisher initialpose_pub;
 
-    double wait_duration; 
+    // double wait_duration; 
     // ros::WallTime start_time, end_time;
     // double execution_time;
 
@@ -184,10 +214,17 @@ private:
     XmlRpc::XmlRpcValue tag_locations;
     std::map<int, geometry_msgs::Pose> tag_poses;
 
+    tf2_ros::Buffer tf2_buffer;
+    tf2_ros::TransformListener tf2_listener;
+    geometry_msgs::TransformStamped tf2_map_base_link_actual_g;
+    geometry_msgs::TransformStamped tf2_base_link_usb_cam_link_g;
+    geometry_msgs::TransformStamped tf2_map_tag_debug_g;
+    tf::Transform base_link_usb_cam_link_g;
+
     // tf::Transformer tf_tool;
-    tf::TransformListener tf_listener;
-    tf::StampedTransform base_link_usb_cam_link_g;
-    tf::StampedTransform map_base_link_actual_g;
+    // tf::TransformListener tf_listener;
+    // tf::StampedTransform base_link_usb_cam_link_g;
+    // tf::StampedTransform map_base_link_actual_g;
     // tf::Quaternion map_base_link_actual_q;
     // tf::Quaternion map_base_link_q;
 
@@ -205,7 +242,7 @@ private:
     tf::Transform usb_cam_link_base_link_g;
     tf::Transform map_base_link_g; 
 
-    tf::StampedTransform map_tag_debug_g;
+    // tf::StampedTransform map_tag_debug_g;
 
 };
 
