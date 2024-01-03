@@ -25,7 +25,7 @@ public:
     static bool compare_dist_from_tag(const apriltag_ros::AprilTagDetection& a, const apriltag_ros::AprilTagDetection& b);
     static void load_tag_poses(const XmlRpc::XmlRpcValue& tag_poses_input, std::map<int, geometry_msgs::Pose>& tag_poses_output);
 
-    resetPose(): tf2_buffer(), tf2_listener(tf2_buffer) //, loop_rate(1)
+    resetPose(): tf2_buffer(), tf2_listener(tf2_buffer)//, loop_rate(1)
     {
         nh.getParam("update_robot_pose/tag_locations", tag_locations);
         nh.getParam("update_robot_pose/max_detection_dist", max_detection_dist);
@@ -38,9 +38,11 @@ public:
 
         load_tag_poses(tag_locations, tag_poses);
 
-        // wait_duration = 1.0;
+        tag_flag = 1;
+        // tag_seq = 0;
+        init_pose = 1;
 
-        // ros::Duration(1.0).sleep();
+        // wait_duration = 1.0;
 
         // get transformation matrix of usb_cam_link w.r.t base_link from tf_tree
         // tf_listener.waitForTransform("base_link", "usb_cam_link", ros::Time(0), ros::Duration(wait_duration));
@@ -84,8 +86,14 @@ public:
 
     void poseCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg)
     {
-        // start_time = ros::WallTime::now();
+        if(init_pose == 1)
+        {
+            tag_seq = msg->header.seq;
+            init_pose = 0;
+        }
+
         // linear and angular velocity threshold for updating the robot's pose
+        // start_time = ros::WallTime::now();
 
         // tf2_map_base_link_actual_g = tf2_buffer.lookupTransform("map", "base_link", ros::Time(0), ros::Duration(1.0));
 
@@ -105,9 +113,14 @@ public:
                 {
                     tag_detected.push_back(msg->detections[i]);
                 }
+                else
+                {
+                    tag_flag = 1;
+                    tag_seq = msg->header.seq;
+                }
             }
             
-            if(!tag_detected.empty())
+            if(!tag_detected.empty() && tag_flag == 1 && msg->header.seq == (tag_seq + 8))
             {
                 std::sort(tag_detected.begin(), tag_detected.end(), compare_dist_from_tag);
 
@@ -130,7 +143,7 @@ public:
                 //     }
                 // }
 
-                int id = tag_detected[0].id[0];
+                id = tag_detected[0].id[0];
 
                 map_tag_g.setOrigin(tf::Vector3(tag_poses[id].position.x, tag_poses[id].position.y, tag_poses[id].position.z));
                 map_tag_g.setRotation(tf::Quaternion(tag_poses[id].orientation.x, tag_poses[id].orientation.y, tag_poses[id].orientation.z, tag_poses[id].orientation.w));
@@ -159,7 +172,7 @@ public:
                 xy_diff = sqrt(pow((xy_actual[0] - xy_detect[0]), 2) +  pow((xy_actual[1] - xy_detect[1]), 2)); 
                 yaw_diff = abs(yaw_actual - yaw_detect);
 
-                ROS_INFO("xy_diff: %f, yaw_diff: %f", xy_diff, yaw_diff);
+                // ROS_INFO("xy_diff: %f, yaw_diff: %f", xy_diff, yaw_diff);
                 // cout << "xy_diff: " << xy_diff << "------" << "yaw_diff: " << yaw_diff << endl;
                 // cout << "------------------------------------------------------------" << endl;
 
@@ -198,6 +211,8 @@ public:
                         map_base_link_data.pose.pose.orientation.w = map_base_link_g.getRotation().w();
                         initialpose_pub.publish(map_base_link_data);
 
+                        tag_flag = 0;
+
                         // end_time = ros::WallTime::now();
                         // execution_time = (end_time - start_time).toNSec() * 1e-6;
                         // ROS_INFO_STREAM("Execution time: " << execution_time << " milliseconds");
@@ -206,6 +221,11 @@ public:
                     }
                 }
             }
+        }
+        else if(msg->detections.empty())
+        {
+            tag_flag = 1;
+            tag_seq = msg->header.seq;
         }
     }
 
@@ -218,6 +238,9 @@ private:
 
     // ros::Rate loop_rate;
 
+    int tag_flag;
+    int tag_seq;
+    int init_pose;
 
     // double wait_duration; 
     // ros::WallTime start_time, end_time;
@@ -248,6 +271,8 @@ private:
 
     geometry_msgs::PoseWithCovarianceStamped map_base_link_data;
     std::vector<apriltag_ros::AprilTagDetection> tag_detected;
+
+    int id;
 
     std::vector<double> xy_actual, xy_detect; 
     double roll_actual, pitch_actual, yaw_actual, roll_detect, pitch_detect, yaw_detect;
