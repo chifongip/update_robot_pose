@@ -152,7 +152,7 @@ private:
                 }
             }
             
-            // when the tag is detected first time, skip specific number of data (e.g. 8), then reset robot's pose
+            // when the tag is detected first time, skip specific number of data (e.g. 5), then reset robot's pose
             if(!tag_detected.empty() && tag_flag == 1 && msg->header.seq == (tag_seq + skip_data_num))
             {
                 // get the closest tag if several tags were detected 
