@@ -1,5 +1,6 @@
 #include "ros/ros.h"
 #include "tf/tf.h"
+// #include "tf/transform_listener.h"
 #include "tf2_ros/transform_listener.h"
 #include "apriltag_ros/AprilTagDetection.h"
 #include "apriltag_ros/AprilTagDetectionArray.h"
@@ -37,7 +38,12 @@ public:
         load_tag_poses(tag_locations, tag_poses);
 
         tag_flag = 1;
+        // tag_seq = 0;
         init_pose = 1;
+
+        // use tf lookuptransform to get transformation of usb_cam_link w.r.t base_link 
+        // tf_listener.waitForTransform("base_link", "usb_cam_link", ros::Time(0), ros::Duration(1.0));
+        // tf_listener.lookupTransform("base_link", "usb_cam_link", ros::Time(0), base_link_usb_cam_link_g);
 
         // use tf2 lookuptransform to get transformation of usb_cam_link w.r.t base_link
         tf2_base_link_usb_cam_link_g = tf2_buffer.lookupTransform("base_link", "usb_cam_link", ros::Time(0), ros::Duration(1.0));
@@ -55,6 +61,11 @@ public:
         // loop_rate = ros::Rate(update_frequency);
 
         cout << "initialization successful." << endl;
+
+        // for(const auto& elem: tag_poses)
+        // {
+        //     cout << elem.first << ": " << elem.second << endl;
+        // }
     }
 
 private:
@@ -63,37 +74,53 @@ private:
     ros::Subscriber odom_sub;
     ros::Subscriber amcl_pose_sub;
     ros::Publisher initialpose_pub;
-    tf2_ros::Buffer tf2_buffer;
-    tf2_ros::TransformListener tf2_listener;
+
     // ros::Rate loop_rate;
-    // ros::WallTime start_time, end_time;
-    // double execution_time;
 
     int tag_flag;
     int tag_seq;
     int init_pose;
-    // double update_frequency;
+
+    // ros::WallTime start_time, end_time;
+    // double execution_time;
+
     int skip_data_num, update_interval;
+    // double update_frequency;
     double curr_linear_vel_x, curr_angular_vel_z;
     double max_detection_dist, max_linear_vel_x, max_angular_vel_z, xy_tolerance, yaw_tolerance;
     XmlRpc::XmlRpcValue tag_locations;
     std::map<int, geometry_msgs::Pose> tag_poses;
 
-    int id;
+    tf2_ros::Buffer tf2_buffer;
+    tf2_ros::TransformListener tf2_listener;
+    // geometry_msgs::TransformStamped tf2_map_base_link_actual_g;
+    geometry_msgs::TransformStamped tf2_base_link_usb_cam_link_g;
+    tf::Transform base_link_usb_cam_link_g;
+
+    geometry_msgs::Pose map_base_link_actual_pose;
+
+    // tf::Transformer tf_tool;
+    // tf::TransformListener tf_listener;
+    // tf::StampedTransform base_link_usb_cam_link_g;
+    // tf::StampedTransform map_base_link_actual_g;
+    // tf::Quaternion map_base_link_actual_q;
+    // tf::Quaternion map_base_link_q;
+
+    geometry_msgs::PoseWithCovarianceStamped map_base_link_data;
     std::vector<apriltag_ros::AprilTagDetection> tag_detected;
+
+    int id;
+
     std::vector<double> xy_actual, xy_detect; 
     double roll_actual, pitch_actual, yaw_actual, roll_detect, pitch_detect, yaw_detect;
     double xy_diff, yaw_diff;
 
-    geometry_msgs::Pose map_base_link_actual_pose;
     tf::Transform usb_cam_link_tag_g;
-    tf::Transform tag_usb_cam_link_g;
-    geometry_msgs::TransformStamped tf2_base_link_usb_cam_link_g;
-    tf::Transform base_link_usb_cam_link_g;
-    tf::Transform usb_cam_link_base_link_g;
     tf::Transform map_tag_g;
-    tf::Transform map_base_link_g;
-    geometry_msgs::PoseWithCovarianceStamped map_base_link_data;
+
+    tf::Transform tag_usb_cam_link_g;
+    tf::Transform usb_cam_link_base_link_g;
+    tf::Transform map_base_link_g; 
 
     static bool compare_dist_from_tag(const apriltag_ros::AprilTagDetection& a, const apriltag_ros::AprilTagDetection& b);
     void load_tag_poses(const XmlRpc::XmlRpcValue& tag_poses_input, std::map<int, geometry_msgs::Pose>& tag_poses_output);
@@ -126,6 +153,9 @@ private:
         }
 
         // start_time = ros::WallTime::now();
+
+        // use tf2 lookuptransform to get transformation of base_link w.r.t. map 
+        // tf2_map_base_link_actual_g = tf2_buffer.lookupTransform("map", "base_link", ros::Time(0), ros::Duration(1.0));
 
         // linear and angular velocity threshold for updating the robot's pose
         if(!msg->detections.empty() && curr_linear_vel_x <= max_linear_vel_x && curr_angular_vel_z <= max_angular_vel_z)
@@ -162,6 +192,21 @@ private:
                 usb_cam_link_tag_g.setRotation(tf::Quaternion(tag_detected[0].pose.pose.pose.orientation.x, tag_detected[0].pose.pose.pose.orientation.y,\
                  tag_detected[0].pose.pose.pose.orientation.z, tag_detected[0].pose.pose.pose.orientation.w));
 
+                // int id = 0;
+                // for(auto d: tag_detected[0].id)
+                // {
+                //     id = id * 10 + d;
+                // }
+
+                // for(int i = 0; i < tag_locations.size(); i++)
+                // {
+                //     if((int) tag_locations[i]["id"] == id)
+                //     {
+                //         map_tag_g.setOrigin(tf::Vector3(tag_locations[i]["x"], tag_locations[i]["y"], tag_locations[i]["z"]));
+                //         map_tag_g.setRotation(tf::Quaternion(tag_locations[i]["qx"], tag_locations[i]["qy"], tag_locations[i]["qz"], tag_locations[i]["qw"]));
+                //     }
+                // }
+
                 // get closest tag id
                 id = tag_detected[0].id[0];
                 
@@ -175,8 +220,22 @@ private:
                 
                 map_base_link_g = map_tag_g * tag_usb_cam_link_g * usb_cam_link_base_link_g;
                 
+                // get robot recent pose 
+                // xy_actual = {tf2_map_base_link_actual_g.transform.translation.x, tf2_map_base_link_actual_g.transform.translation.y};
+                // tf::Matrix3x3(tf::Quaternion(tf2_map_base_link_actual_g.transform.rotation.x, tf2_map_base_link_actual_g.transform.rotation.y, tf2_map_base_link_actual_g.transform.rotation.z,\
+                //  tf2_map_base_link_actual_g.transform.rotation.w)).getRPY(roll_actual, pitch_actual, yaw_actual);
+
+                // use tf lookuptransform to get transformation of base_link w.r.t map
+                // tf_listener.waitForTransform("map", "base_link", ros::Time(0), ros::Duration(1.0));
+                // tf_listener.lookupTransform("map", "base_link", ros::Time(0), map_base_link_actual_g);
+                // get robot recent pose
+                // xy_actual = {map_base_link_actual_g.getOrigin().x(), map_base_link_actual_g.getOrigin().y()};       // actual xy position
+                // // map_base_link_actual_q = map_base_link_actual_g.getRotation();
+                // tf::Matrix3x3(map_base_link_actual_g.getRotation()).getRPY(roll_actual, pitch_actual, yaw_actual);  // actual yaw angle
+                
                 // get robot estimated pose based on tag 
                 xy_detect = {map_base_link_g.getOrigin().x(), map_base_link_g.getOrigin().y()};
+                // map_base_link_q = map_base_link_g.getRotation();
                 tf::Matrix3x3(map_base_link_g.getRotation()).getRPY(roll_detect, pitch_detect, yaw_detect);
 
                 // get difference between recent pose and estimated pose
@@ -192,6 +251,7 @@ private:
                 {
                     // loop_rate.reset();
                     
+                    // map_base_link_data.header.seq = msg->header.seq;
                     map_base_link_data.header.stamp = ros::Time::now();
                     map_base_link_data.header.frame_id = "map";
 

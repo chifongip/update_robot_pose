@@ -138,6 +138,7 @@ include_directories(
 # add_executable(${PROJECT_NAME}_node src/update_robot_pose_node.cpp)
 
 add_executable(update_robot_pose src/update_robot_pose.cpp)
+add_executable(get_tag_location src/get_tag_location.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -155,6 +156,8 @@ add_executable(update_robot_pose src/update_robot_pose.cpp)
 # )
 
 target_link_libraries(update_robot_pose ${catkin_LIBRARIES})
+target_link_libraries(get_tag_location ${catkin_LIBRARIES})
+
 
 #############
 ## Install ##
