@@ -210,7 +210,7 @@ private:
                         map_base_link_data.pose.pose.orientation.w = map_base_link_g.getRotation().w();
                         initialpose_pub.publish(map_base_link_data);
 
-                        // tag_flag = 0;
+                        tag_flag = 0;
 
                         // end_time = ros::WallTime::now();
                         // execution_time = (end_time - start_time).toNSec() * 1e-6;
