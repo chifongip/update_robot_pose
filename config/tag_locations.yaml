@@ -13,5 +13,6 @@ max_angular_vel_z: 0.6      # max: 2.0, < 0.6
 xy_tolerance: 0.3           # > 0.3
 yaw_tolerance: 0.3          # > 0.3
 # update_frequency: 1.0       # < 10hz, default 1hz
-skip_data_num: 5            # 15 = 1s
 update_interval: 45         # 15 = 1s
+image_width: 640
+image_height: 480
