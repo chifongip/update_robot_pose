@@ -32,6 +32,11 @@ public:
         // nh.getParam("update_robot_pose/update_frequency", update_frequency);
         nh.getParam("update_robot_pose/image_width", image_width);
         nh.getParam("update_robot_pose/image_height", image_height);
+        nh.getParam("update_robot_pose/continuous_check", continuous_check);
+        nh.getParam("update_robot_pose/check_threshold", check_threshold);
+
+        reset_buf = 1;
+        cnt_buf = 0;
 
         // construct a dictionary to store tag locations
         load_tag_poses(tag_locations, tag_poses);
@@ -70,6 +75,8 @@ private:
     // double execution_time;
 
     // double update_frequency;
+    int continuous_check;
+    double check_threshold;
     int image_width, image_height;
     double curr_linear_vel_x, curr_angular_vel_z;
     double max_detection_dist, max_linear_vel_x, max_angular_vel_z, xy_tolerance, yaw_tolerance;
@@ -81,6 +88,9 @@ private:
     std::vector<double> xy_actual, xy_detect; 
     double roll_actual, pitch_actual, yaw_actual, roll_detect, pitch_detect, yaw_detect;
     double xy_diff, yaw_diff;
+    
+    int reset_buf, cnt_buf;
+    double yaw_actual_buf, yaw_detect_buf;
 
     geometry_msgs::Pose map_base_link_actual_pose;
     geometry_msgs::TransformStamped tf2_map_base_link_actual_g;
@@ -123,12 +133,6 @@ private:
             //     map_base_link_actual_pose.orientation.y, 
             //     map_base_link_actual_pose.orientation.z,
             //     map_base_link_actual_pose.orientation.w)).getRPY(roll_actual, pitch_actual, yaw_actual);
-            tf2_map_base_link_actual_g = tf2_buffer.lookupTransform("map", "base_link", ros::Time(0), ros::Duration(1.0));
-            xy_actual = {tf2_map_base_link_actual_g.transform.translation.x, tf2_map_base_link_actual_g.transform.translation.y};
-            tf::Matrix3x3(tf::Quaternion(tf2_map_base_link_actual_g.transform.rotation.x, 
-                tf2_map_base_link_actual_g.transform.rotation.y, 
-                tf2_map_base_link_actual_g.transform.rotation.z,
-                tf2_map_base_link_actual_g.transform.rotation.w)).getRPY(roll_actual, pitch_actual, yaw_actual);
 
             // ROS_INFO("odom stamp: %f, tag stamp: %f", tf2_map_base_link_actual_g.header.stamp.toSec(), msg->header.stamp.toSec());
 
@@ -177,7 +181,14 @@ private:
                     usb_cam_link_base_link_g = base_link_usb_cam_link_g.inverse();      // base_link w.r.t. usb_cam_link
                     
                     map_base_link_g = map_tag_g * tag_usb_cam_link_g * usb_cam_link_base_link_g;
-                    
+
+                    tf2_map_base_link_actual_g = tf2_buffer.lookupTransform("map", "base_link", ros::Time(0), ros::Duration(1.0));
+                    xy_actual = {tf2_map_base_link_actual_g.transform.translation.x, tf2_map_base_link_actual_g.transform.translation.y};
+                    tf::Matrix3x3(tf::Quaternion(tf2_map_base_link_actual_g.transform.rotation.x, 
+                        tf2_map_base_link_actual_g.transform.rotation.y, 
+                        tf2_map_base_link_actual_g.transform.rotation.z,
+                        tf2_map_base_link_actual_g.transform.rotation.w)).getRPY(roll_actual, pitch_actual, yaw_actual);
+
                     // get robot estimated pose based on tag 
                     xy_detect = {map_base_link_g.getOrigin().x(), map_base_link_g.getOrigin().y()};
                     tf::Matrix3x3(map_base_link_g.getRotation()).getRPY(roll_detect, pitch_detect, yaw_detect);
@@ -189,8 +200,22 @@ private:
                     // ROS_INFO("xy_diff: %f, yaw_diff: %f", xy_diff, yaw_diff);
                     ROS_INFO("yaw_actual: %f, yaw_detect: %f", yaw_actual, yaw_detect);
 
+                    if(reset_buf)
+                    {
+                        yaw_actual_buf = yaw_actual;
+                        yaw_detect_buf = yaw_detect;
+                        reset_buf = 0;
+                    }
+                    else
+                    {
+                        if((abs(yaw_actual_buf) - abs(yaw_actual)) < check_threshold && (abs(yaw_detect_buf) - abs(yaw_detect)) < check_threshold)
+                        {
+                            cnt_buf++;
+                        }
+                    }
+
                     // update robot's pose when the difference between recent pose and estimated pose is greater than threshold 
-                    if(xy_diff > xy_tolerance || yaw_diff > yaw_tolerance) 
+                    if((xy_diff > xy_tolerance || yaw_diff > yaw_tolerance) && continuous_check == cnt_buf) 
                     {
                         // loop_rate.reset();
                         
@@ -205,6 +230,9 @@ private:
                         map_base_link_data.pose.pose.orientation.z = map_base_link_g.getRotation().z();
                         map_base_link_data.pose.pose.orientation.w = map_base_link_g.getRotation().w();
                         initialpose_pub.publish(map_base_link_data);
+
+                        reset_buf = 1;
+                        cnt_buf = 0;
 
                         // end_time = ros::WallTime::now();
                         // execution_time = (end_time - start_time).toNSec() * 1e-6;
