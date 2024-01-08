@@ -43,6 +43,7 @@ public:
 
         // use tf2 lookuptransform to get transformation of usb_cam_link w.r.t base_link
         tf2_base_link_usb_cam_link_g = tf2_buffer.lookupTransform("base_link", "usb_cam_link", ros::Time(0), ros::Duration(1.0));
+        
         base_link_usb_cam_link_g.setOrigin(tf::Vector3(tf2_base_link_usb_cam_link_g.transform.translation.x, 
             tf2_base_link_usb_cam_link_g.transform.translation.y,
             tf2_base_link_usb_cam_link_g.transform.translation.z));
@@ -50,6 +51,8 @@ public:
             tf2_base_link_usb_cam_link_g.transform.rotation.y,
             tf2_base_link_usb_cam_link_g.transform.rotation.z, 
             tf2_base_link_usb_cam_link_g.transform.rotation.w));
+
+        usb_cam_link_base_link_g = base_link_usb_cam_link_g.inverse();      // base_link w.r.t. usb_cam_link
 
         // initialize subscriber and publisher
         tag_detections_sub = nh.subscribe("tag_detections", 1, &resetPose::poseCallback, this);
@@ -178,7 +181,6 @@ private:
 
                     // calculate transformation of base_link w.r.t. map
                     tag_usb_cam_link_g = usb_cam_link_tag_g.inverse();                  // usb_cam_link w.r.t. tag
-                    usb_cam_link_base_link_g = base_link_usb_cam_link_g.inverse();      // base_link w.r.t. usb_cam_link
                     
                     map_base_link_g = map_tag_g * tag_usb_cam_link_g * usb_cam_link_base_link_g;
 
