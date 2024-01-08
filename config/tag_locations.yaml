@@ -1,19 +1,19 @@
 tag_locations:
   [
-    {id: 1, x: 0.474283, y: -1.460830, z: 0.100586, qx: -0.034613, qy: -0.664205, qz: -0.746627, qw: 0.013439},
-    {id: 2, x: 3.674, y: 6.360, z: 0.153, qx: 0.670, qy: -0.023, qz: -0.013, qw: 0.742},
+    {id: 1, x: 0.456458, y: -1.414853, z: 0.094037, qx: -0.020081, qy: -0.648789, qz: -0.760375, qw: 0.022354},
+    {id: 2, x: 3.638085, y: 6.377855, z: 0.094940, qx: 0.652064, qy: -0.060059, qz: -0.059957, qw: 0.753399},
     {id: 4, x: 0.526227, y: 2.211401, z: -0.030423, qx: 0.668465, qy: -0.010406, qz: -0.009038, qw: 0.743616},
     {id: 7, x: 1.225162, y: 0.628737, z: 0.030566, qx: 0.559687, qy: -0.353481, qz: -0.402914, qw: 0.632030},
     # {id: 7, x: 0.0, y: 0.0, z: 0.0, qx: 0.0, qy: 0.0, qz: 0.0, qw: 1.0},
     {id: 8, x: 0.873, y: -1.957, z: 0.086, qx: 0.055, qy: 0.658, qz: 0.749, qw: 0.063}
   ]
-max_detection_dist: 1.5     # < 1.5
-max_linear_vel_x: 1.0       # max: 1.0, < 1.0
-max_angular_vel_z: 0.6      # max: 2.0, < 0.6
-xy_tolerance: 0.3           # > 0.3
-yaw_tolerance: 0.3          # > 0.3
+max_detection_dist: 2.0     # < 1.5
+max_linear_vel_x: 0.5       # max: 1.0, < 0.5
+max_angular_vel_z: 0.5      # max: 2.0, < 0.5
+xy_tolerance: 0.2           # > 0.3
+yaw_tolerance: 0.2          # > 0.3
 # update_frequency: 1.0       # < 10hz, default 1hz
 image_width: 640
 image_height: 480
-continuous_check: 5
-check_threshold: 0.2
+continuous_check: 10
+check_threshold: 0.1

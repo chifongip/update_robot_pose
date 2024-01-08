@@ -6,6 +6,7 @@
 #include "geometry_msgs/TransformStamped.h"
 #include "geometry_msgs/PoseWithCovarianceStamped.h"
 #include "geometry_msgs/Pose.h"
+#include "geometry_msgs/Twist.h"
 #include "nav_msgs/Odometry.h"
 
 #include <XmlRpcException.h>
@@ -93,8 +94,11 @@ private:
     double xy_diff, yaw_diff;
     
     int reset_buf, cnt_buf;
+    std::vector<double> xy_actual_buf, xy_detect_buf;
+    double xy_actual_diff, xy_detect_diff;
     double yaw_actual_buf, yaw_detect_buf;
 
+    geometry_msgs::Twist odom_twist;
     geometry_msgs::Pose map_base_link_actual_pose;
     geometry_msgs::TransformStamped tf2_map_base_link_actual_g;
     tf::Transform usb_cam_link_tag_g;
@@ -113,8 +117,7 @@ private:
     void odomCallback(const nav_msgs::Odometry::ConstPtr& msg)
     {
         // get recent linear and angular velocity from odom 
-        curr_linear_vel_x = abs(msg->twist.twist.linear.x);
-        curr_angular_vel_z = abs(msg->twist.twist.angular.z);
+        odom_twist = msg->twist.twist;
     }
 
     void amclPoseCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& msg)
@@ -126,6 +129,9 @@ private:
     void poseCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr& msg)
     {
         // start_time = ros::WallTime::now();
+
+        curr_linear_vel_x = abs(odom_twist.linear.x);
+        curr_angular_vel_z = abs(odom_twist.angular.z);
 
         // linear and angular velocity threshold for updating the robot's pose
         if(!msg->detections.empty() && curr_linear_vel_x <= max_linear_vel_x && curr_angular_vel_z <= max_angular_vel_z)
@@ -208,15 +214,31 @@ private:
                     if(reset_buf)
                     {
                         ROS_INFO("counting pose.");
+                        xy_actual_buf = xy_actual;
+                        xy_detect_buf = xy_detect;
                         yaw_actual_buf = yaw_actual;
                         yaw_detect_buf = yaw_detect;
                         reset_buf = 0;
+                        cnt_buf++;
                     }
                     else
                     {
-                        if((abs(yaw_actual_buf) - abs(yaw_actual)) < check_threshold && (abs(yaw_detect_buf) - abs(yaw_detect)) < check_threshold)
+                        xy_actual_diff = sqrt(pow((abs(xy_actual_buf[0]) - abs(xy_actual[0])), 2) +  pow((abs(xy_actual_buf[1]) - abs(xy_actual[1])), 2));
+                        xy_detect_diff = sqrt(pow((abs(xy_detect_buf[0]) - abs(xy_detect[0])), 2) +  pow((abs(xy_detect_buf[1]) - abs(xy_detect[1])), 2));
+                        if((abs(yaw_actual_buf) - abs(yaw_actual)) < check_threshold && (abs(yaw_detect_buf) - abs(yaw_detect)) < check_threshold
+                            && xy_actual_diff < check_threshold && xy_detect_diff < check_threshold)
                         {
+                            xy_actual_buf = xy_actual;
+                            xy_detect_buf = xy_detect;
+                            yaw_actual_buf = yaw_actual;
+                            yaw_detect_buf = yaw_detect;
                             cnt_buf++;
+                        }
+                        else
+                        {
+                            reset_buf = 1;
+                            cnt_buf = 0;
+                            ROS_INFO("greater than check threshold.");
                         }
                     }
                     
@@ -320,7 +342,7 @@ bool resetPose::is_tag_vaild(const std::vector<geometry_msgs::Point>& image_poin
     y_min = *std::min_element(y_array.begin(), y_array.end());
     y_max = *std::max_element(y_array.begin(), y_array.end());
 
-    if(x_min > 20.0 && y_min > 20.0 && x_max < (image_width - 20.0) && y_max < (image_height - 20.0))
+    if(x_min > 30.0 && y_min > 30.0 && x_max < (image_width - 30.0) && y_max < (image_height - 30.0))
     {
         return true;
     }
