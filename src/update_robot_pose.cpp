@@ -83,6 +83,7 @@ private:
     double xy_diff, yaw_diff;
 
     geometry_msgs::Pose map_base_link_actual_pose;
+    geometry_msgs::TransformStamped tf2_map_base_link_actual_g;
     tf::Transform usb_cam_link_tag_g;
     tf::Transform tag_usb_cam_link_g;
     geometry_msgs::TransformStamped tf2_base_link_usb_cam_link_g;
@@ -117,11 +118,19 @@ private:
         if(!msg->detections.empty() && curr_linear_vel_x <= max_linear_vel_x && curr_angular_vel_z <= max_angular_vel_z)
         {
             // get robot recent pose 
-            xy_actual = {map_base_link_actual_pose.position.x, map_base_link_actual_pose.position.y};
-            tf::Matrix3x3(tf::Quaternion(map_base_link_actual_pose.orientation.x, 
-                map_base_link_actual_pose.orientation.y, 
-                map_base_link_actual_pose.orientation.z,
-                map_base_link_actual_pose.orientation.w)).getRPY(roll_actual, pitch_actual, yaw_actual);
+            // xy_actual = {map_base_link_actual_pose.position.x, map_base_link_actual_pose.position.y};
+            // tf::Matrix3x3(tf::Quaternion(map_base_link_actual_pose.orientation.x, 
+            //     map_base_link_actual_pose.orientation.y, 
+            //     map_base_link_actual_pose.orientation.z,
+            //     map_base_link_actual_pose.orientation.w)).getRPY(roll_actual, pitch_actual, yaw_actual);
+            tf2_map_base_link_actual_g = tf2_buffer.lookupTransform("map", "base_link", ros::Time(0), ros::Duration(1.0));
+            xy_actual = {tf2_map_base_link_actual_g.transform.translation.x, tf2_map_base_link_actual_g.transform.translation.y};
+            tf::Matrix3x3(tf::Quaternion(tf2_map_base_link_actual_g.transform.rotation.x, 
+                tf2_map_base_link_actual_g.transform.rotation.y, 
+                tf2_map_base_link_actual_g.transform.rotation.z,
+                tf2_map_base_link_actual_g.transform.rotation.w)).getRPY(roll_actual, pitch_actual, yaw_actual);
+
+            // ROS_INFO("odom stamp: %f, tag stamp: %f", tf2_map_base_link_actual_g.header.stamp.toSec(), msg->header.stamp.toSec());
 
             // use tag_detected vector to store the detected tags
             tag_detected.clear();
@@ -178,6 +187,7 @@ private:
                     yaw_diff = abs(yaw_actual - yaw_detect);
 
                     // ROS_INFO("xy_diff: %f, yaw_diff: %f", xy_diff, yaw_diff);
+                    ROS_INFO("yaw_actual: %f, yaw_detect: %f", yaw_actual, yaw_detect);
 
                     // update robot's pose when the difference between recent pose and estimated pose is greater than threshold 
                     if(xy_diff > xy_tolerance || yaw_diff > yaw_tolerance) 
