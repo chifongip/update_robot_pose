@@ -194,14 +194,18 @@ private:
                     tf::Matrix3x3(map_base_link_g.getRotation()).getRPY(roll_detect, pitch_detect, yaw_detect);
 
                     // get difference between recent pose and estimated pose
-                    xy_diff = sqrt(pow((xy_actual[0] - xy_detect[0]), 2) +  pow((xy_actual[1] - xy_detect[1]), 2)); 
-                    yaw_diff = abs(yaw_actual - yaw_detect);
+                    xy_diff = sqrt(pow((abs(xy_actual[0]) - abs(xy_detect[0])), 2) +  pow((abs(xy_actual[1]) - abs(xy_detect[1])), 2)); 
+                    yaw_diff = abs(yaw_actual) - abs(yaw_detect);
 
                     // ROS_INFO("xy_diff: %f, yaw_diff: %f", xy_diff, yaw_diff);
+                    ROS_INFO("xy_actual: %f, xy_detect: %f", xy_actual[0], xy_detect[0]);
+                    ROS_INFO("xy_actual: %f, xy_detect: %f", xy_actual[1], xy_detect[1]);
                     ROS_INFO("yaw_actual: %f, yaw_detect: %f", yaw_actual, yaw_detect);
+                    ROS_INFO("--------------------------------------------------------");
 
                     if(reset_buf)
                     {
+                        ROS_INFO("counting pose.");
                         yaw_actual_buf = yaw_actual;
                         yaw_detect_buf = yaw_detect;
                         reset_buf = 0;
@@ -213,35 +217,63 @@ private:
                             cnt_buf++;
                         }
                     }
-
-                    // update robot's pose when the difference between recent pose and estimated pose is greater than threshold 
-                    if((xy_diff > xy_tolerance || yaw_diff > yaw_tolerance) && continuous_check == cnt_buf) 
+                    
+                    if(continuous_check == cnt_buf)
                     {
-                        // loop_rate.reset();
-                        
-                        map_base_link_data.header.stamp = ros::Time::now();
-                        map_base_link_data.header.frame_id = "map";
+                        // update robot's pose when the difference between recent pose and estimated pose is greater than threshold 
+                        if(xy_diff > xy_tolerance || yaw_diff > yaw_tolerance) 
+                        {
+                            // loop_rate.reset();
+                            
+                            map_base_link_data.header.stamp = ros::Time::now();
+                            map_base_link_data.header.frame_id = "map";
 
-                        map_base_link_data.pose.pose.position.x = map_base_link_g.getOrigin().x();
-                        map_base_link_data.pose.pose.position.y = map_base_link_g.getOrigin().y();
-                        map_base_link_data.pose.pose.position.z = map_base_link_g.getOrigin().z();
-                        map_base_link_data.pose.pose.orientation.x = map_base_link_g.getRotation().x();
-                        map_base_link_data.pose.pose.orientation.y = map_base_link_g.getRotation().y();
-                        map_base_link_data.pose.pose.orientation.z = map_base_link_g.getRotation().z();
-                        map_base_link_data.pose.pose.orientation.w = map_base_link_g.getRotation().w();
-                        initialpose_pub.publish(map_base_link_data);
+                            map_base_link_data.pose.pose.position.x = map_base_link_g.getOrigin().x();
+                            map_base_link_data.pose.pose.position.y = map_base_link_g.getOrigin().y();
+                            map_base_link_data.pose.pose.position.z = map_base_link_g.getOrigin().z();
+                            map_base_link_data.pose.pose.orientation.x = map_base_link_g.getRotation().x();
+                            map_base_link_data.pose.pose.orientation.y = map_base_link_g.getRotation().y();
+                            map_base_link_data.pose.pose.orientation.z = map_base_link_g.getRotation().z();
+                            map_base_link_data.pose.pose.orientation.w = map_base_link_g.getRotation().w();
+                            initialpose_pub.publish(map_base_link_data);
 
-                        reset_buf = 1;
-                        cnt_buf = 0;
+                            reset_buf = 1;
+                            cnt_buf = 0;
+                            ROS_INFO("resetting pose.");
 
-                        // end_time = ros::WallTime::now();
-                        // execution_time = (end_time - start_time).toNSec() * 1e-6;
-                        // ROS_INFO_STREAM("Execution time: " << execution_time << " milliseconds");
+                            // end_time = ros::WallTime::now();
+                            // execution_time = (end_time - start_time).toNSec() * 1e-6;
+                            // ROS_INFO_STREAM("Execution time: " << execution_time << " milliseconds");
 
-                        // loop_rate.sleep();
+                            // loop_rate.sleep();
+                        }
+                        else
+                        {
+                            reset_buf = 1;
+                            cnt_buf = 0;       
+                            ROS_INFO("cnt greater threshold.");                     
+                        }
                     }
                 }
+                else
+                {
+                    reset_buf = 1;
+                    cnt_buf = 0;
+                    ROS_INFO("invaild tag.");
+                }
             }
+            else
+            {
+                reset_buf = 1;
+                cnt_buf = 0; 
+                ROS_INFO("outside max dist.");
+            }
+        }
+        else
+        {
+            reset_buf = 1;
+            cnt_buf = 0; 
+            ROS_INFO("no tag detected.");
         }
     }
 };
