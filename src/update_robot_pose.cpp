@@ -112,7 +112,7 @@ private:
 
     static bool compare_dist_from_tag(const apriltag_ros::AprilTagDetection& a, const apriltag_ros::AprilTagDetection& b);
     void load_tag_poses(const XmlRpc::XmlRpcValue& tag_poses_input, std::map<int, geometry_msgs::Pose>& tag_poses_output);
-    bool is_tag_vaild(const std::vector<geometry_msgs::Point>& image_points, const int& image_width, const int& image_height);
+    bool is_tag_valid(const std::vector<geometry_msgs::Point>& image_points, const int& image_width, const int& image_height);
     
     void odomCallback(const nav_msgs::Odometry::ConstPtr& msg)
     {
@@ -162,8 +162,8 @@ private:
                 // get the closest tag if several tags were detected 
                 std::sort(tag_detected.begin(), tag_detected.end(), compare_dist_from_tag);
 
-                // when the tag is vaild and is detected first time 
-                if(is_tag_vaild(tag_detected[0].image_points, image_width, image_height))
+                // when the tag is valid and is detected first time 
+                if(is_tag_valid(tag_detected[0].image_points, image_width, image_height))
                 {
                     usb_cam_link_tag_g.setOrigin(tf::Vector3(tag_detected[0].pose.pose.pose.position.x, 
                         tag_detected[0].pose.pose.pose.position.y, 
@@ -275,7 +275,7 @@ private:
                         {
                             reset_buf = 1;
                             cnt_buf = 0;       
-                            ROS_INFO("cnt greater threshold.");                     
+                            ROS_INFO("greater than tolerance.");                     
                         }
                     }
                 }
@@ -283,7 +283,7 @@ private:
                 {
                     reset_buf = 1;
                     cnt_buf = 0;
-                    ROS_INFO("invaild tag.");
+                    ROS_INFO("invalid tag.");
                 }
             }
             else
@@ -326,7 +326,7 @@ void resetPose::load_tag_poses(const XmlRpc::XmlRpcValue& tag_poses_input, std::
     }
 }
 
-bool resetPose::is_tag_vaild(const std::vector<geometry_msgs::Point>& image_points, const int& image_width, const int& image_height)
+bool resetPose::is_tag_valid(const std::vector<geometry_msgs::Point>& image_points, const int& image_width, const int& image_height)
 {
     std::vector<float> x_array, y_array;
     float x_min, x_max, y_min, y_max;
