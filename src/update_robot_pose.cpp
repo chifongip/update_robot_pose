@@ -56,9 +56,9 @@ public:
         usb_cam_link_base_link_g = base_link_usb_cam_link_g.inverse();      // base_link w.r.t. usb_cam_link
 
         // initialize subscriber and publisher
-        tag_detections_sub = nh.subscribe("tag_detections", 1, &resetPose::poseCallback, this);
-        odom_sub = nh.subscribe("odom", 1, &resetPose::odomCallback, this);
-        amcl_pose_sub = nh.subscribe("amcl_pose", 1, &resetPose::amclPoseCallback, this);
+        tag_detections_sub = nh.subscribe("tag_detections", 10, &resetPose::poseCallback, this);
+        odom_sub = nh.subscribe("odom", 10, &resetPose::odomCallback, this);
+        amcl_pose_sub = nh.subscribe("amcl_pose", 10, &resetPose::amclPoseCallback, this);
         initialpose_pub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("initialpose", 1);
 
         // loop_rate = ros::Rate(update_frequency);
@@ -203,12 +203,12 @@ private:
 
                     // get difference between recent pose and estimated pose
                     xy_diff = sqrt(pow((abs(xy_actual[0]) - abs(xy_detect[0])), 2) +  pow((abs(xy_actual[1]) - abs(xy_detect[1])), 2)); 
-                    yaw_diff = abs(yaw_actual) - abs(yaw_detect);
-
-                    // ROS_INFO("xy_diff: %f, yaw_diff: %f", xy_diff, yaw_diff);
-                    ROS_INFO("xy_actual: %f, xy_detect: %f", xy_actual[0], xy_detect[0]);
-                    ROS_INFO("xy_actual: %f, xy_detect: %f", xy_actual[1], xy_detect[1]);
+                    yaw_diff = abs(abs(yaw_actual) - abs(yaw_detect));
+                    
+                    ROS_INFO("xy_actual_x: %f, xy_detect_x: %f", xy_actual[0], xy_detect[0]);
+                    ROS_INFO("xy_actual_y: %f, xy_detect_y: %f", xy_actual[1], xy_detect[1]);
                     ROS_INFO("yaw_actual: %f, yaw_detect: %f", yaw_actual, yaw_detect);
+                    ROS_INFO("xy_diff: %f, yaw_diff: %f", xy_diff, yaw_diff);
                     ROS_INFO("--------------------------------------------------------");
 
                     if(reset_buf)
@@ -225,7 +225,7 @@ private:
                     {
                         xy_actual_diff = sqrt(pow((abs(xy_actual_buf[0]) - abs(xy_actual[0])), 2) +  pow((abs(xy_actual_buf[1]) - abs(xy_actual[1])), 2));
                         xy_detect_diff = sqrt(pow((abs(xy_detect_buf[0]) - abs(xy_detect[0])), 2) +  pow((abs(xy_detect_buf[1]) - abs(xy_detect[1])), 2));
-                        if((abs(yaw_actual_buf) - abs(yaw_actual)) < check_threshold && (abs(yaw_detect_buf) - abs(yaw_detect)) < check_threshold
+                        if(abs(abs(yaw_actual_buf) - abs(yaw_actual)) < check_threshold && abs(abs(yaw_detect_buf) - abs(yaw_detect)) < check_threshold
                             && xy_actual_diff < check_threshold && xy_detect_diff < check_threshold)
                         {
                             xy_actual_buf = xy_actual;
@@ -275,7 +275,7 @@ private:
                         {
                             reset_buf = 1;
                             cnt_buf = 0;       
-                            ROS_INFO("greater than tolerance.");                     
+                            ROS_INFO("smaller than tolerance.");                     
                         }
                     }
                 }

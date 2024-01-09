@@ -7,13 +7,13 @@ tag_locations:
     # {id: 7, x: 0.0, y: 0.0, z: 0.0, qx: 0.0, qy: 0.0, qz: 0.0, qw: 1.0},
     {id: 8, x: 0.873, y: -1.957, z: 0.086, qx: 0.055, qy: 0.658, qz: 0.749, qw: 0.063}
   ]
-max_detection_dist: 2.0     # < 1.5
+max_detection_dist: 1.5     # < 2.0
 max_linear_vel_x: 0.5       # max: 1.0, < 0.5
 max_angular_vel_z: 0.5      # max: 2.0, < 0.5
-xy_tolerance: 0.2           # > 0.3
-yaw_tolerance: 0.2          # > 0.3
+xy_tolerance: 0.3           # > 0.3
+yaw_tolerance: 0.3          # > 0.3
 # update_frequency: 1.0       # < 10hz, default 1hz
 image_width: 640
 image_height: 480
-continuous_check: 10
-check_threshold: 0.1
+continuous_check: 5
+check_threshold: 0.15
