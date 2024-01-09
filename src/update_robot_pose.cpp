@@ -126,150 +126,132 @@ private:
         if(!msg->detections.empty() && curr_linear_vel_x <= max_linear_vel_x && curr_angular_vel_z <= max_angular_vel_z)
         {
             // store the detected tags
-            tag_detected.clear();
-            for(int i = 0; i < msg->detections.size(); i++)
+            tag_detected = msg->detections;
+
+            // sort the detected tags, where index 0 is the closest tag
+            std::sort(tag_detected.begin(), tag_detected.end(), compare_dist_from_tag);
+
+            // true if tag was valid and within the distance  
+            if(tag_detected[0].pose.pose.pose.position.z <= max_detection_dist && 
+                is_tag_valid(tag_detected[0].image_points, image_width, image_height))
             {
-                // check distance between tag and usb_cam_link, append to the vector if distance < threshold 
-                if(msg->detections[i].pose.pose.pose.position.z <= max_detection_dist)
+                // construct transformation of tag w.r.t. usb_cam_link 
+                usb_cam_link_tag_g.setOrigin(tf::Vector3(tag_detected[0].pose.pose.pose.position.x, 
+                    tag_detected[0].pose.pose.pose.position.y, 
+                    tag_detected[0].pose.pose.pose.position.z));
+                usb_cam_link_tag_g.setRotation(tf::Quaternion(tag_detected[0].pose.pose.pose.orientation.x, 
+                    tag_detected[0].pose.pose.pose.orientation.y,
+                    tag_detected[0].pose.pose.pose.orientation.z, 
+                    tag_detected[0].pose.pose.pose.orientation.w));
+
+                // get closest tag id
+                id = tag_detected[0].id[0];
+                
+                // get closest tag location from dictionary and construct transformation of tag w.r.t. map 
+                map_tag_g.setOrigin(tf::Vector3(tag_poses[id].position.x, 
+                    tag_poses[id].position.y, 
+                    tag_poses[id].position.z));
+                map_tag_g.setRotation(tf::Quaternion(tag_poses[id].orientation.x, 
+                    tag_poses[id].orientation.y, 
+                    tag_poses[id].orientation.z, 
+                    tag_poses[id].orientation.w));
+
+                // construct transformation of usb_cam_link w.r.t. tag
+                tag_usb_cam_link_g = usb_cam_link_tag_g.inverse(); 
+                
+                map_base_link_g = map_tag_g * tag_usb_cam_link_g * usb_cam_link_base_link_g;
+
+                // use tf2 lookuptransform to get transformation of base_link w.r.t map from tf_tree, e.g., robot current pose
+                tf2_map_base_link_actual_g = tf2_buffer.lookupTransform("map", "base_link", ros::Time(0), ros::Duration(1.0));
+
+                // get robot current pose based on tf_tree 
+                xy_actual = {tf2_map_base_link_actual_g.transform.translation.x, tf2_map_base_link_actual_g.transform.translation.y};
+                tf::Matrix3x3(tf::Quaternion(tf2_map_base_link_actual_g.transform.rotation.x, 
+                    tf2_map_base_link_actual_g.transform.rotation.y, 
+                    tf2_map_base_link_actual_g.transform.rotation.z,
+                    tf2_map_base_link_actual_g.transform.rotation.w)).getRPY(roll_actual, pitch_actual, yaw_actual);
+
+                // get robot estimated pose based on tag 
+                xy_detect = {map_base_link_g.getOrigin().x(), map_base_link_g.getOrigin().y()};
+                tf::Matrix3x3(map_base_link_g.getRotation()).getRPY(roll_detect, pitch_detect, yaw_detect);
+
+                // get difference between current pose and estimated pose
+                xy_diff = sqrt(pow((abs(xy_actual[0]) - abs(xy_detect[0])), 2) +  pow((abs(xy_actual[1]) - abs(xy_detect[1])), 2)); 
+                yaw_diff = abs(abs(yaw_actual) - abs(yaw_detect));
+                
+                // ROS_INFO("xy_actual_x: %f, xy_detect_x: %f", xy_actual[0], xy_detect[0]);
+                // ROS_INFO("xy_actual_y: %f, xy_detect_y: %f", xy_actual[1], xy_detect[1]);
+                // ROS_INFO("yaw_actual: %f, yaw_detect: %f", yaw_actual, yaw_detect);
+                // ROS_INFO("xy_diff: %f, yaw_diff: %f", xy_diff, yaw_diff);
+                // ROS_INFO("--------------------------------------------------------");
+
+                if(reset_buf)   // get the first data for compare 
                 {
-                    tag_detected.push_back(msg->detections[i]);
+                    // ROS_INFO("get the first data.");
+                    xy_actual_buf = xy_actual;
+                    xy_detect_buf = xy_detect;
+                    yaw_actual_buf = yaw_actual;
+                    yaw_detect_buf = yaw_detect;
+                    reset_buf = 0;
+                    cnt_buf++;
                 }
-            }
-
-            // true if tag was detected and within the distance  
-            if(!tag_detected.empty())
-            {
-                // get the closest tag if several tags were detected, where index 0 is the closest tag 
-                std::sort(tag_detected.begin(), tag_detected.end(), compare_dist_from_tag);
-
-                // true if the tag is away from the image edges  
-                if(is_tag_valid(tag_detected[0].image_points, image_width, image_height))
+                else            // compare with the previous data 
                 {
-                    // construct transformation of tag w.r.t. usb_cam_link 
-                    usb_cam_link_tag_g.setOrigin(tf::Vector3(tag_detected[0].pose.pose.pose.position.x, 
-                        tag_detected[0].pose.pose.pose.position.y, 
-                        tag_detected[0].pose.pose.pose.position.z));
-                    usb_cam_link_tag_g.setRotation(tf::Quaternion(tag_detected[0].pose.pose.pose.orientation.x, 
-                        tag_detected[0].pose.pose.pose.orientation.y,
-                        tag_detected[0].pose.pose.pose.orientation.z, 
-                        tag_detected[0].pose.pose.pose.orientation.w));
-
-                    // get closest tag id
-                    id = tag_detected[0].id[0];
+                    xy_actual_diff = sqrt(pow((abs(xy_actual_buf[0]) - abs(xy_actual[0])), 2) +  pow((abs(xy_actual_buf[1]) - abs(xy_actual[1])), 2));
+                    xy_detect_diff = sqrt(pow((abs(xy_detect_buf[0]) - abs(xy_detect[0])), 2) +  pow((abs(xy_detect_buf[1]) - abs(xy_detect[1])), 2));
                     
-                    // get closest tag location from dictionary and construct transformation of tag w.r.t. map 
-                    map_tag_g.setOrigin(tf::Vector3(tag_poses[id].position.x, 
-                        tag_poses[id].position.y, 
-                        tag_poses[id].position.z));
-                    map_tag_g.setRotation(tf::Quaternion(tag_poses[id].orientation.x, 
-                        tag_poses[id].orientation.y, 
-                        tag_poses[id].orientation.z, 
-                        tag_poses[id].orientation.w));
-
-                    // construct transformation of usb_cam_link w.r.t. tag
-                    tag_usb_cam_link_g = usb_cam_link_tag_g.inverse(); 
-                    
-                    map_base_link_g = map_tag_g * tag_usb_cam_link_g * usb_cam_link_base_link_g;
-
-                    // use tf2 lookuptransform to get transformation of base_link w.r.t map from tf_tree, e.g., robot current pose
-                    tf2_map_base_link_actual_g = tf2_buffer.lookupTransform("map", "base_link", ros::Time(0), ros::Duration(1.0));
-
-                    // get robot current pose based on tf_tree 
-                    xy_actual = {tf2_map_base_link_actual_g.transform.translation.x, tf2_map_base_link_actual_g.transform.translation.y};
-                    tf::Matrix3x3(tf::Quaternion(tf2_map_base_link_actual_g.transform.rotation.x, 
-                        tf2_map_base_link_actual_g.transform.rotation.y, 
-                        tf2_map_base_link_actual_g.transform.rotation.z,
-                        tf2_map_base_link_actual_g.transform.rotation.w)).getRPY(roll_actual, pitch_actual, yaw_actual);
-
-                    // get robot estimated pose based on tag 
-                    xy_detect = {map_base_link_g.getOrigin().x(), map_base_link_g.getOrigin().y()};
-                    tf::Matrix3x3(map_base_link_g.getRotation()).getRPY(roll_detect, pitch_detect, yaw_detect);
-
-                    // get difference between current pose and estimated pose
-                    xy_diff = sqrt(pow((abs(xy_actual[0]) - abs(xy_detect[0])), 2) +  pow((abs(xy_actual[1]) - abs(xy_detect[1])), 2)); 
-                    yaw_diff = abs(abs(yaw_actual) - abs(yaw_detect));
-                    
-                    ROS_INFO("xy_actual_x: %f, xy_detect_x: %f", xy_actual[0], xy_detect[0]);
-                    ROS_INFO("xy_actual_y: %f, xy_detect_y: %f", xy_actual[1], xy_detect[1]);
-                    ROS_INFO("yaw_actual: %f, yaw_detect: %f", yaw_actual, yaw_detect);
-                    ROS_INFO("xy_diff: %f, yaw_diff: %f", xy_diff, yaw_diff);
-                    ROS_INFO("--------------------------------------------------------");
-
-                    if(reset_buf)   // get the first data for compare 
+                    // true if the difference is smaller than threshold 
+                    if(abs(abs(yaw_actual_buf) - abs(yaw_actual)) < check_threshold && abs(abs(yaw_detect_buf) - abs(yaw_detect)) < check_threshold
+                        && xy_actual_diff < check_threshold && xy_detect_diff < check_threshold)
                     {
-                        ROS_INFO("get the first data.");
                         xy_actual_buf = xy_actual;
                         xy_detect_buf = xy_detect;
                         yaw_actual_buf = yaw_actual;
                         yaw_detect_buf = yaw_detect;
-                        reset_buf = 0;
                         cnt_buf++;
                     }
-                    else            // compare with the previous data 
+                    // reset if the difference is greater than threshold 
+                    else
                     {
-                        xy_actual_diff = sqrt(pow((abs(xy_actual_buf[0]) - abs(xy_actual[0])), 2) +  pow((abs(xy_actual_buf[1]) - abs(xy_actual[1])), 2));
-                        xy_detect_diff = sqrt(pow((abs(xy_detect_buf[0]) - abs(xy_detect[0])), 2) +  pow((abs(xy_detect_buf[1]) - abs(xy_detect[1])), 2));
-                        
-                        // true if the difference is smaller than threshold 
-                        if(abs(abs(yaw_actual_buf) - abs(yaw_actual)) < check_threshold && abs(abs(yaw_detect_buf) - abs(yaw_detect)) < check_threshold
-                            && xy_actual_diff < check_threshold && xy_detect_diff < check_threshold)
-                        {
-                            xy_actual_buf = xy_actual;
-                            xy_detect_buf = xy_detect;
-                            yaw_actual_buf = yaw_actual;
-                            yaw_detect_buf = yaw_detect;
-                            cnt_buf++;
-                        }
-                        // reset if the difference is greater than threshold 
-                        else
-                        {
-                            reset_buf = 1;
-                            cnt_buf = 0;
-                            ROS_INFO("greater than check threshold.");
-                        }
-                    }
-                    
-                    // true if the data is continuously smaller than threshold for the chosen times 
-                    if(continuous_check == cnt_buf)
-                    {
-                        // update robot's pose if the difference between recent pose and estimated pose is greater than threshold 
-                        if(xy_diff > xy_tolerance || yaw_diff > yaw_tolerance) 
-                        {
-                            map_base_link_data.header.stamp = ros::Time::now();
-                            map_base_link_data.header.frame_id = "map";
-
-                            map_base_link_data.pose.pose.position.x = map_base_link_g.getOrigin().x();
-                            map_base_link_data.pose.pose.position.y = map_base_link_g.getOrigin().y();
-                            map_base_link_data.pose.pose.position.z = map_base_link_g.getOrigin().z();
-                            map_base_link_data.pose.pose.orientation.x = map_base_link_g.getRotation().x();
-                            map_base_link_data.pose.pose.orientation.y = map_base_link_g.getRotation().y();
-                            map_base_link_data.pose.pose.orientation.z = map_base_link_g.getRotation().z();
-                            map_base_link_data.pose.pose.orientation.w = map_base_link_g.getRotation().w();
-                            initialpose_pub.publish(map_base_link_data);
-
-                            reset_buf = 1;
-                            cnt_buf = 0;
-                            ROS_INFO("resetting pose.");
-
-                            // end_time = ros::WallTime::now();
-                            // execution_time = (end_time - start_time).toNSec() * 1e-6;
-                            // ROS_INFO_STREAM("Execution time: " << execution_time << " milliseconds");
-                        }
-                        // reset if the difference is smaller than tolerance
-                        else
-                        {
-                            reset_buf = 1;
-                            cnt_buf = 0;       
-                            ROS_INFO("smaller than tolerance.");                     
-                        }
+                        reset_buf = 1;
+                        cnt_buf = 0;
+                        // ROS_INFO("greater than check threshold.");
                     }
                 }
-                // reset if the tag is on the image edges 
-                else
+                
+                // true if the data is continuously smaller than threshold for the chosen times 
+                if(continuous_check == cnt_buf)
                 {
-                    reset_buf = 1;
-                    cnt_buf = 0;
-                    ROS_INFO("invalid tag.");
+                    // update robot's pose if the difference between recent pose and estimated pose is greater than threshold 
+                    if(xy_diff > xy_tolerance || yaw_diff > yaw_tolerance) 
+                    {
+                        map_base_link_data.header.stamp = ros::Time::now();
+                        map_base_link_data.header.frame_id = "map";
+
+                        map_base_link_data.pose.pose.position.x = map_base_link_g.getOrigin().x();
+                        map_base_link_data.pose.pose.position.y = map_base_link_g.getOrigin().y();
+                        map_base_link_data.pose.pose.position.z = map_base_link_g.getOrigin().z();
+                        map_base_link_data.pose.pose.orientation.x = map_base_link_g.getRotation().x();
+                        map_base_link_data.pose.pose.orientation.y = map_base_link_g.getRotation().y();
+                        map_base_link_data.pose.pose.orientation.z = map_base_link_g.getRotation().z();
+                        map_base_link_data.pose.pose.orientation.w = map_base_link_g.getRotation().w();
+                        initialpose_pub.publish(map_base_link_data);
+
+                        reset_buf = 1;
+                        cnt_buf = 0;
+                        ROS_INFO("resetting pose.");
+
+                        // end_time = ros::WallTime::now();
+                        // execution_time = (end_time - start_time).toNSec() * 1e-6;
+                        // ROS_INFO_STREAM("Execution time: " << execution_time << " milliseconds");
+                    }
+                    // reset if the difference is smaller than tolerance
+                    else
+                    {
+                        reset_buf = 1;
+                        cnt_buf = 0;       
+                        // ROS_INFO("smaller than tolerance.");                     
+                    }
                 }
             }
             // reset if the difference is outside the distance 
@@ -277,7 +259,7 @@ private:
             {
                 reset_buf = 1;
                 cnt_buf = 0; 
-                ROS_INFO("outside max dist.");
+                // ROS_INFO("the tag was invalid or outside max dist.");
             }
         }
         // reset if no tag detected 
@@ -285,7 +267,7 @@ private:
         {
             reset_buf = 1;
             cnt_buf = 0; 
-            ROS_INFO("no tag detected.");
+            // ROS_INFO("no tag detected.");
         }
     }
 };
@@ -330,7 +312,7 @@ bool resetPose::is_tag_valid(const std::vector<geometry_msgs::Point>& image_poin
     y_min = *std::min_element(y_array.begin(), y_array.end());
     y_max = *std::max_element(y_array.begin(), y_array.end());
 
-    if(x_min > 30.0 && y_min > 30.0 && x_max < (image_width - 30.0) && y_max < (image_height - 30.0))
+    if(x_min > 20.0 && y_min > 20.0 && x_max < (image_width - 20.0) && y_max < (image_height - 20.0))
     {
         return true;
     }
