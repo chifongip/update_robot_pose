@@ -8,8 +8,8 @@ tag_locations:
     {id: 8, x: 0.873, y: -1.957, z: 0.086, qx: 0.055, qy: 0.658, qz: 0.749, qw: 0.063}
   ]
 max_detection_dist: 1.5     # maximum detection distance between tag and camera, recommend < 2.0
-max_linear_vel_x: 0.5       # maximum linear velocity for reset pose, max: 1.0, recommend < 0.5 
-max_angular_vel_z: 0.5      # maximum angular velocity for reset pose, max: 2.0, recommend < 0.5
+max_linear_vel_x: 0.5       # maximum linear velocity for reset pose, max 1.0, recommend < 0.5 
+max_angular_vel_z: 0.5      # maximum angular velocity for reset pose, max 2.0, recommend < 0.5
 xy_tolerance: 0.3           # xy tolerance for reset pose, recommend > 0.3
 yaw_tolerance: 0.3          # yaw tolerance for reset pose, recommend > 0.3
 image_width: 640
